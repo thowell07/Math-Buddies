@@ -1,0 +1,406 @@
+import React, { useState, useEffect } from 'react';
+import { Star, RotateCcw, Play, Trophy, Home, Settings } from 'lucide-react';
+
+// --- SVG ASSETS ---
+
+const FurryMonster = ({ color, className }) => (
+  <svg viewBox="0 0 100 100" className={className}>
+    <path
+      d="M20,80 Q10,80 10,70 Q10,20 50,20 Q90,20 90,70 Q90,80 80,80 L20,80"
+      fill={color}
+      stroke="black"
+      strokeWidth="3"
+    />
+    <circle cx="25" cy="25" r="8" fill={color} stroke="black" strokeWidth="2" />
+    <circle cx="75" cy="25" r="8" fill={color} stroke="black" strokeWidth="2" />
+    <circle cx="35" cy="50" r="10" fill="white" stroke="black" strokeWidth="2" />
+    <circle cx="35" cy="50" r="3" fill="black" />
+    <circle cx="65" cy="50" r="10" fill="white" stroke="black" strokeWidth="2" />
+    <circle cx="65" cy="50" r="3" fill="black" />
+    <path d="M40,70 Q50,75 60,70" fill="none" stroke="black" strokeWidth="3" strokeLinecap="round" />
+  </svg>
+);
+
+const LittleChick = ({ className }) => (
+  <svg viewBox="0 0 100 100" className={className}>
+    <ellipse cx="50" cy="60" rx="35" ry="30" fill="#FFD700" stroke="black" strokeWidth="3" />
+    <circle cx="50" cy="35" r="25" fill="#FFD700" stroke="black" strokeWidth="3" />
+    <circle cx="40" cy="30" r="5" fill="white" stroke="black" strokeWidth="2" />
+    <circle cx="42" cy="30" r="2" fill="black" />
+    <circle cx="60" cy="30" r="5" fill="white" stroke="black" strokeWidth="2" />
+    <circle cx="58" cy="30" r="2" fill="black" />
+    <path d="M45,40 L55,40 L50,50 Z" fill="#FF8C00" stroke="black" strokeWidth="2" />
+    <path d="M45,12 L50,20 L55,12" fill="none" stroke="black" strokeWidth="3" strokeLinecap="round" />
+    <path d="M40,90 L40,95 M35,95 L45,95" stroke="black" strokeWidth="3" />
+    <path d="M60,90 L60,95 M55,95 L65,95" stroke="black" strokeWidth="3" />
+  </svg>
+);
+
+// --- CONFIG ---
+
+const GAME_MODES = {
+  ADDITION: 'addition',
+  SUBTRACTION: 'subtraction'
+};
+
+const THEMES = {
+  MONSTERS: { id: 'monsters', name: 'Furry Friends', Component: FurryMonster, colors: ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEEAD'] },
+  CHICKS: { id: 'chicks', name: 'Little Chicks', Component: LittleChick, colors: ['#FFD700'] }
+};
+
+export default function MathBuddies() {
+  // App State
+  const [gameState, setGameState] = useState('menu'); // menu, playing, victory
+  const [theme, setTheme] = useState('monsters');
+  const [mode, setMode] = useState(GAME_MODES.ADDITION);
+  const [difficulty, setDifficulty] = useState(1); // 1: sums to 10, 2: sums to 20
+
+  // Session State
+  const [score, setScore] = useState(0);
+  const [problem, setProblem] = useState(null);
+  const [choices, setChoices] = useState([]);
+  const [message, setMessage] = useState(null); 
+  const [animating, setAnimating] = useState(false);
+
+  // --- CORE LOGIC ---
+
+  // We pass specificMode here to ensure we use the mode the user JUST clicked,
+  // not the state value which might be stale due to React batching.
+  const generateProblem = (specificMode = mode) => {
+    let num1, num2, answer, operator;
+    const max = difficulty === 1 ? 10 : 20;
+
+    if (specificMode === GAME_MODES.ADDITION) {
+      // Addition: Sum should not exceed max
+      // num1 is between 1 and (max - 1)
+      num1 = Math.floor(Math.random() * (max - 1)) + 1;
+      // num2 is between 1 and (max - num1)
+      num2 = Math.floor(Math.random() * (max - num1)) + 1;
+      answer = num1 + num2;
+      operator = '+';
+    } else {
+      // Subtraction: num1 (minuend) must be larger than num2 (subtrahend)
+      // num1 between 2 and max
+      num1 = Math.floor(Math.random() * (max - 1)) + 2;
+      // num2 between 1 and (num1 - 1)
+      num2 = Math.floor(Math.random() * (num1 - 1)) + 1;
+      answer = num1 - num2;
+      operator = '-';
+    }
+
+    // Fixed Choice Generation (No While Loops)
+    // 1. Generate a pool of wrong answers
+    const potentialWrongAnswers = [];
+    const range = 5; // Look for numbers +/- 5 around the answer
+    
+    for (let i = answer - range; i <= answer + range; i++) {
+      if (i >= 0 && i !== answer) { // valid non-negative, non-answer
+        potentialWrongAnswers.push(i);
+      }
+    }
+
+    // 2. Shuffle the potential wrong answers
+    const shuffledWrong = potentialWrongAnswers.sort(() => Math.random() - 0.5);
+    
+    // 3. Take the first two
+    // Fallback: If for some reason we don't have enough (very rare with range 5), add simple randoms
+    if (shuffledWrong.length < 2) {
+        shuffledWrong.push(answer + 1);
+        shuffledWrong.push(answer + 2);
+    }
+
+    const finalChoices = [answer, shuffledWrong[0], shuffledWrong[1]]
+      .sort(() => Math.random() - 0.5);
+
+    setProblem({ num1, num2, answer, operator });
+    setChoices(finalChoices);
+    setMessage(null);
+    setAnimating(false);
+  };
+
+  const handleAnswer = (selectedAnswer) => {
+    if (animating) return;
+
+    if (selectedAnswer === problem.answer) {
+      setAnimating(true);
+      setMessage('correct');
+      const newScore = score + 1;
+      setScore(newScore);
+      
+      setTimeout(() => {
+        if (newScore >= 10) {
+            setGameState('victory');
+        } else {
+            generateProblem();
+        }
+      }, 1500);
+    } else {
+      setMessage('wrong');
+      setTimeout(() => setMessage(null), 1000);
+    }
+  };
+
+  const startGame = (selectedMode) => {
+    setMode(selectedMode);
+    setScore(0);
+    setGameState('playing');
+    // CRITICAL FIX: Pass the selected mode directly to generateProblem
+    // This bypasses React's asynchronous state update delay
+    generateProblem(selectedMode);
+  };
+
+  // --- RENDER HELPERS ---
+
+  const renderVisuals = () => {
+    if (!problem) return null;
+    
+    const ThemeComp = THEMES[theme].Component;
+    const colors = THEMES[theme].colors;
+
+    // Addition Layout
+    if (problem.operator === '+') {
+      return (
+        <div className="flex items-center justify-center space-x-2 sm:space-x-6 bg-white/60 p-4 rounded-3xl">
+          {/* Group 1 */}
+          <div className="flex flex-wrap justify-center gap-1 max-w-[120px] sm:max-w-[180px]">
+             {Array.from({ length: problem.num1 }).map((_, i) => (
+               <div key={`g1-${i}`} className="w-8 h-8 sm:w-12 sm:h-12 animate-bounce-slight" style={{ animationDelay: `${i * 0.1}s` }}>
+                 <ThemeComp color={colors[i % colors.length]} className="w-full h-full drop-shadow-sm" />
+               </div>
+             ))}
+          </div>
+          
+          <div className="text-3xl sm:text-5xl font-black text-slate-400">+</div>
+
+          {/* Group 2 */}
+          <div className="flex flex-wrap justify-center gap-1 max-w-[120px] sm:max-w-[180px]">
+             {Array.from({ length: problem.num2 }).map((_, i) => (
+               <div key={`g2-${i}`} className="w-8 h-8 sm:w-12 sm:h-12 animate-bounce-slight" style={{ animationDelay: `${(i + problem.num1) * 0.1}s` }}>
+                 <ThemeComp color={colors[(i + problem.num1) % colors.length]} className="w-full h-full drop-shadow-sm" />
+               </div>
+             ))}
+          </div>
+        </div>
+      );
+    }
+
+    // Subtraction Layout
+    return (
+      <div className="flex flex-col items-center justify-center bg-white/60 p-4 rounded-3xl w-full">
+        <div className="flex flex-wrap justify-center gap-2">
+          {Array.from({ length: problem.num1 }).map((_, i) => {
+             // The last 'num2' items are the ones being "taken away"
+             const isTakenAway = i >= (problem.num1 - problem.num2);
+             return (
+              <div 
+                  key={`sub-${i}`} 
+                  className={`w-10 h-10 sm:w-14 sm:h-14 relative transition-all duration-500 ${isTakenAway ? 'opacity-40 grayscale scale-90' : ''}`}
+              >
+                  <ThemeComp 
+                      color={colors[i % colors.length]} 
+                      className="w-full h-full drop-shadow-md" 
+                  />
+                  {isTakenAway && (
+                      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                          <div className="w-[120%] h-1 bg-red-500 rotate-45 absolute rounded-full"></div>
+                          <div className="w-[120%] h-1 bg-red-500 -rotate-45 absolute rounded-full"></div>
+                      </div>
+                  )}
+              </div>
+             );
+          })}
+        </div>
+        <div className="mt-4 text-slate-500 font-bold text-sm sm:text-base bg-white px-4 py-1 rounded-full shadow-sm">
+            Count the ones NOT crossed out!
+        </div>
+      </div>
+    );
+  };
+
+  // --- SCREENS ---
+
+  if (gameState === 'menu') {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-sky-400 to-indigo-500 flex items-center justify-center p-4 font-sans select-none">
+        <div className="bg-white rounded-3xl p-6 sm:p-8 shadow-2xl max-w-md w-full space-y-6 border-b-8 border-r-8 border-sky-900">
+          <div className="text-center">
+            <h1 className="text-4xl sm:text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-pink-500 to-violet-600 pb-2">
+              Math Buddies
+            </h1>
+            <p className="text-slate-500 font-medium">Let's play together!</p>
+          </div>
+
+          {/* Theme Selector */}
+          <div className="bg-slate-50 p-4 rounded-2xl border-2 border-slate-100">
+            <p className="text-center font-bold text-slate-400 mb-3 uppercase text-xs tracking-widest">Choose a Friend</p>
+            <div className="flex justify-center gap-4">
+              {Object.values(THEMES).map((t) => (
+                <button
+                  key={t.id}
+                  onClick={() => setTheme(t.id)}
+                  className={`
+                    p-2 rounded-xl border-4 transition-all duration-200 w-24 h-24 flex flex-col items-center justify-center
+                    ${theme === t.id ? 'border-green-400 bg-green-50 scale-105 shadow-md' : 'border-transparent bg-white opacity-60 hover:opacity-100'}
+                  `}
+                >
+                  <t.Component className="w-10 h-10 mb-2" color={t.colors[0]} />
+                  <span className="text-xs font-bold text-slate-600">{t.name}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Mode Buttons */}
+          <div className="space-y-3 pt-2">
+            <button
+              onClick={() => startGame(GAME_MODES.ADDITION)}
+              className="group w-full py-4 bg-yellow-400 hover:bg-yellow-300 text-yellow-900 rounded-2xl font-black text-xl shadow-[0_4px_0_rgb(161,98,7)] active:shadow-none active:translate-y-1 transition-all flex items-center justify-center gap-3"
+            >
+              <div className="bg-white/30 p-1 rounded-lg group-hover:scale-110 transition-transform"><Play size={24} /></div>
+              ADDITION (+)
+            </button>
+            <button
+              onClick={() => startGame(GAME_MODES.SUBTRACTION)}
+              className="group w-full py-4 bg-orange-400 hover:bg-orange-300 text-orange-900 rounded-2xl font-black text-xl shadow-[0_4px_0_rgb(154,52,18)] active:shadow-none active:translate-y-1 transition-all flex items-center justify-center gap-3"
+            >
+               <div className="bg-white/30 p-1 rounded-lg group-hover:scale-110 transition-transform"><Play size={24} /></div>
+               SUBTRACTION (-)
+            </button>
+          </div>
+
+          {/* Difficulty Toggle */}
+          <button 
+            onClick={() => setDifficulty(d => d === 1 ? 2 : 1)}
+            className="w-full text-xs font-bold text-slate-400 hover:text-slate-600 flex items-center justify-center gap-2 py-2"
+          >
+            <Settings size={12} />
+            Level: {difficulty === 1 ? 'Beginner (1-10)' : 'Expert (1-20)'}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (gameState === 'victory') {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-green-400 to-teal-500 flex items-center justify-center p-4">
+        <div className="text-center space-y-6 animate-bounce-slight bg-white/10 p-8 rounded-3xl backdrop-blur-sm">
+          <Trophy size={120} className="text-yellow-300 drop-shadow-lg mx-auto filter" />
+          <h1 className="text-5xl sm:text-6xl font-black text-white drop-shadow-md tracking-wide">YOU WON!</h1>
+          <div className="flex justify-center gap-4">
+             <Star size={50} className="text-yellow-300 fill-yellow-300 animate-pulse" />
+             <Star size={60} className="text-yellow-300 fill-yellow-300 animate-pulse delay-75" />
+             <Star size={50} className="text-yellow-300 fill-yellow-300 animate-pulse delay-150" />
+          </div>
+          <button 
+            onClick={() => setGameState('menu')}
+            className="mt-8 bg-white text-green-600 text-xl font-black py-4 px-12 rounded-full shadow-xl hover:scale-105 transition-transform flex items-center gap-2 mx-auto"
+          >
+            <RotateCcw size={24} /> Play Again
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  // Playing State
+  return (
+    <div className="min-h-screen bg-slate-50 flex flex-col font-sans select-none overflow-hidden">
+      {/* Header */}
+      <div className="flex justify-between items-center p-4 sm:p-6 max-w-3xl mx-auto w-full">
+        <button 
+          onClick={() => setGameState('menu')} 
+          className="p-3 rounded-2xl bg-white shadow-sm border-2 border-slate-100 hover:border-slate-300 text-slate-400 hover:text-slate-600 transition-colors"
+        >
+          <Home size={24} />
+        </button>
+        
+        <div className="flex items-center gap-3 bg-white px-6 py-2 rounded-full border-2 border-yellow-200 shadow-sm">
+          <Star className="text-yellow-400 fill-yellow-400" size={24} />
+          <span className="text-2xl font-black text-slate-700">{score}<span className="text-slate-300 text-lg">/10</span></span>
+        </div>
+
+        <div className="w-12"></div> {/* Spacer */}
+      </div>
+
+      {/* Game Board */}
+      <div className="flex-1 flex flex-col items-center justify-center p-4 max-w-2xl mx-auto w-full space-y-6 sm:space-y-10">
+        
+        {/* Loading State Safety */}
+        {!problem ? (
+           <div className="text-slate-400 font-bold animate-pulse">Loading math...</div>
+        ) : (
+           <>
+            {/* Equation */}
+            <div className="flex items-center justify-center space-x-4 text-slate-700">
+               <span className="text-6xl sm:text-8xl font-black">{problem.num1}</span>
+               <span className="text-5xl sm:text-7xl font-black text-blue-400">{problem.operator}</span>
+               <span className="text-6xl sm:text-8xl font-black">{problem.num2}</span>
+               <span className="text-5xl sm:text-7xl font-black text-slate-300">=</span>
+               <span className="text-6xl sm:text-8xl font-black text-slate-200 bg-white px-4 rounded-xl border-4 border-dashed border-slate-200">?</span>
+            </div>
+
+            {/* Visual Helper */}
+            {renderVisuals()}
+
+            {/* Feedback Area (Fixed Height to prevent jumping) */}
+            <div className="h-8 sm:h-12 flex items-center justify-center w-full">
+              {message === 'correct' && (
+                <div className="text-green-500 font-black text-2xl sm:text-3xl animate-bounce tracking-widest uppercase">Great Job!</div>
+              )}
+              {message === 'wrong' && (
+                <div className="text-red-400 font-black text-xl sm:text-2xl animate-shake">Try Again!</div>
+              )}
+            </div>
+
+            {/* Answer Buttons */}
+            <div className="grid grid-cols-3 gap-3 sm:gap-6 w-full">
+              {choices.map((choice, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => handleAnswer(choice)}
+                  disabled={message === 'correct'}
+                  className={`
+                    h-20 sm:h-32 rounded-2xl sm:rounded-3xl text-4xl sm:text-6xl font-black 
+                    shadow-[0_4px_0_rgba(0,0,0,0.1)] active:translate-y-1 active:shadow-none transition-all
+                    border-b-4
+                    ${message === 'correct' && choice === problem.answer 
+                        ? 'bg-green-400 border-green-600 text-white scale-105' 
+                        : 'bg-white border-slate-200 text-slate-700 hover:bg-blue-50 hover:border-blue-200'}
+                    ${message === 'wrong' ? 'shake-animation' : ''}
+                  `}
+                >
+                  {choice}
+                </button>
+              ))}
+            </div>
+           </>
+        )}
+      </div>
+
+      {/* Footer Info */}
+      <div className="p-4 text-center text-slate-300 font-bold uppercase text-xs tracking-[0.2em]">
+        {mode === GAME_MODES.ADDITION ? 'Addition Mode' : 'Subtraction Mode'}
+      </div>
+
+      <style>{`
+        @keyframes bounce-slight {
+          0%, 100% { transform: translateY(-5%); }
+          50% { transform: translateY(5%); }
+        }
+        .animate-bounce-slight {
+          animation: bounce-slight 2s infinite ease-in-out;
+        }
+        @keyframes shake {
+          10%, 90% { transform: translate3d(-1px, 0, 0); }
+          20%, 80% { transform: translate3d(2px, 0, 0); }
+          30%, 50%, 70% { transform: translate3d(-4px, 0, 0); }
+          40%, 60% { transform: translate3d(4px, 0, 0); }
+        }
+        .animate-shake {
+          animation: shake 0.5s cubic-bezier(.36,.07,.19,.97) both;
+        }
+      `}</style>
+    </div>
+  );
+}
